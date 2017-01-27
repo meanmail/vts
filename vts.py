@@ -6,7 +6,7 @@ import time
 
 import logging
 
-from settings import SLACK_TOKEN, VK_LOGIN, VK_PASSWORD, GROUP_ID, TOPIC_ID, ICON_URL
+from settings import SLACK_TOKEN, VK_LOGIN, VK_PASSWORD, GROUP_ID, TOPIC_ID, ICON_URL, CHANNEL, USERNAME
 
 slack = Slacker(SLACK_TOKEN)
 
@@ -105,7 +105,7 @@ class Vts:
                     message_date = '<!date^' + str(date) + '^Posted {date} {time}|Posted 2014-02-18 6:39:42>'
                     text = "\n".join(map(lambda s: ">" + s, text.split("\n")))
                     message = '>*' + title + '*\n>_' + username + '_ (' + message_date + ')\n' + text
-                    slack.chat.post_message(channel='#random', text=message, username='vts', icon_url=ICON_URL)
+                    slack.chat.post_message(channel=CHANNEL, text=message, username=USERNAME, icon_url=ICON_URL)
                     logging.info('Posted comment_id=%s\n%s', id, message)
 
 if __name__ == '__main__':
