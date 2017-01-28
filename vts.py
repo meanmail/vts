@@ -1,18 +1,18 @@
 import logging
+import sys
 import time
 
-import daemon
 import vk_api
 from slacker import Slacker
 
+from daemon import Daemon
 from settings import SLACK_TOKEN, VK_LOGIN, VK_PASSWORD, GROUP_ID, TOPIC_ID, ICON_URL, CHANNEL, USERNAME
 
-slack = Slacker(SLACK_TOKEN)
 
-
-class Vts:
+class Vts(Daemon):
     last_comment_id = 0
     vk = None
+    slack = Slacker(SLACK_TOKEN)
 
     @staticmethod
     def update_vk():
@@ -23,11 +23,8 @@ class Vts:
 
         try:
             vk_session.authorization()
-        except vk_api.AuthorizationError as error_msg:
-            logging.error(error_msg)
-            return
-        except vk_api.Captcha as captcha:
-            logging.error(captcha)
+        except (vk_api.AuthorizationError, vk_api.Captcha, vk_api.ApiError, vk_api.ApiHttpError) as error:
+            logging.error(error)
             return
 
         Vts.vk = vk_session.get_api()
@@ -82,15 +79,14 @@ class Vts:
 
         return response['items'][0]
 
-    @staticmethod
-    def run():
+    def run(self):
         while True:
             if Vts.last_comment_id == 0:
                 Vts.update_last_comment_id()
 
             if Vts.last_comment_id == 0:
                 time.sleep(60)
-                return
+                continue
 
             topic = Vts.get_topic()
             if topic is None:
@@ -110,24 +106,42 @@ class Vts:
                 users[profile['id']] = profile
 
             for comment in comments:
-                id = comment['id']
-                if id > Vts.last_comment_id:
-                    Vts.last_comment_id = id
+                comment_id = comment['id']
+                if comment_id > Vts.last_comment_id:
+                    Vts.last_comment_id = comment_id
 
                     try:
                         user = users[abs(comment['from_id'])]
                         username = ' '.join([user['first_name'], user['last_name']])
                     except KeyError:
-                        username = ''
+                        username = 'unknown'
 
                     message_date = '<!date^' + str(comment['date']) + '^Posted {date} {time}|Posted 2014-02-18 6:39:42>'
                     text = str(comment['text']).replace('\n', '\n>')
                     message = '>*{title}*\n>_{username}_ ({date})\n>{text}'.format(title=topic['title'],
                                                                                    username=username, date=message_date,
                                                                                    text=text)
-                    slack.chat.post_message(channel=CHANNEL, text=message, username=USERNAME, icon_url=ICON_URL)
-                    logging.info('Posted comment_id=%s\n%s', id, message)
+                    try:
+                        Vts.slack.chat.post_message(channel=CHANNEL, text=message, username=USERNAME, icon_url=ICON_URL)
+                        logging.info('Posted comment_id=%s\n%s', comment_id, message)
+                    except:
+                        time.sleep(60)
+                        continue
 
 
-with daemon.DaemonContext():
-    Vts.run()
+if __name__ == "__main__":
+    daemon = Vts('/tmp/vts.pid')
+    if len(sys.argv) == 2:
+        if 'start' == sys.argv[1]:
+            daemon.start()
+        elif 'stop' == sys.argv[1]:
+            daemon.stop()
+        elif 'restart' == sys.argv[1]:
+            daemon.restart()
+        else:
+            print("Unknown command")
+            sys.exit(2)
+        sys.exit(0)
+    else:
+        print("usage: %s start|stop|restart" % sys.argv[0])
+        sys.exit(2)

@@ -2,8 +2,8 @@
 
 ### BEGIN INIT INFO
 # Provides:          vts
-# Required-Start:    $network $local_fs $syslog
-# Required-Stop:     $local_fs $syslog
+# Required-Start:    $all
+# Required-Stop:     $network $named $remote_fs $syslog
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
 # Short-Description: VK to Slack
@@ -12,15 +12,30 @@
 
 . /lib/lsb/init-functions
 
+cd /path/to/vts
+
+do_start() {
+    python vts.py start
+    log_daemon_msg "Started VTS" "vts"
+}
+
+do_stop() {
+    python vts.py stop
+    log_daemon_msg "Stopping VTS" "vts"
+}
+
 case "$1" in
     start)
-        cd /path/to/vts
-        if [ -f vts.py ]
-	    then
-            python vts.py
-	    fi
-	    ;;
-    stop|reload|restart|force-reload|status)
+        do_start
+        ;;
+    stop)
+        do_stop
+        ;;
+    restart)
+        do_stop
+        do_start
+        ;;
+    reload|force-reload|status)
         ;;
     *)
         echo "Usage: $0 {start|stop|restart|force-reload|status}" >&2
