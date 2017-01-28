@@ -39,10 +39,14 @@ class Vts:
         if self.vk is None:
             return
 
-        response = self.vk.board.getComments(group_id=GROUP_ID, topic_id=TOPIC_ID, sort='desc', count=1)
-        if response['count'] == 0:
-            time.sleep(5)
+        try:
+            response = self.vk.board.getComments(group_id=GROUP_ID, topic_id=TOPIC_ID, sort='desc', count=1)
+        except vk_api.ApiError:
             return
+
+        if response['count'] == 0:
+            return
+
         self.last_comment_id = response['items'][0]['id']
         print('Set initial id to ' + str(self.last_comment_id))
 
@@ -52,15 +56,25 @@ class Vts:
         if self.vk is None:
             return [], []
 
-        response = self.vk.board.getComments(group_id=GROUP_ID, topic_id=TOPIC_ID,
-                                             start_comment_id=self.last_comment_id, extended=1)
+        try:
+            response = self.vk.board.getComments(group_id=GROUP_ID, topic_id=TOPIC_ID,
+                                                 start_comment_id=self.last_comment_id, extended=1)
+        except vk_api.ApiError:
+            return [], []
 
         return response['items'], response['profiles']
 
     def get_topic(self):
         self.update_vk()
 
-        response = self.vk.board.getTopics(group_id=GROUP_ID, topic_ids=[TOPIC_ID])
+        if self.vk is None:
+            return None
+
+        try:
+            response = self.vk.board.getTopics(group_id=GROUP_ID, topic_ids=[TOPIC_ID])
+        except vk_api.ApiError:
+            return None
+
         if response['count'] == 0:
             return None
 
@@ -70,6 +84,10 @@ class Vts:
         while True:
             if self.last_comment_id == 0:
                 self.update_last_comment_id()
+
+            if self.last_comment_id == 0:
+                time.sleep(60)
+                return
 
             topic = self.get_topic()
             if topic is None:
@@ -92,21 +110,21 @@ class Vts:
                 id = comment['id']
                 if id > self.last_comment_id:
                     self.last_comment_id = id
-                    text = comment['text']
-                    title = topic['title']
-                    user_id = abs(comment['from_id'])
+
                     try:
-                        user = users[user_id]
+                        user = users[abs(comment['from_id'])]
                         username = ' '.join([user['first_name'], user['last_name']])
                     except KeyError:
                         username = ''
 
-                    date = comment['date']
-                    message_date = '<!date^' + str(date) + '^Posted {date} {time}|Posted 2014-02-18 6:39:42>'
-                    text = "\n".join(map(lambda s: ">" + s, text.split("\n")))
-                    message = '>*' + title + '*\n>_' + username + '_ (' + message_date + ')\n' + text
+                    message_date = '<!date^' + str(comment['date']) + '^Posted {date} {time}|Posted 2014-02-18 6:39:42>'
+                    text = str(comment['text']).replace('\n', '\n>')
+                    message = '>*{title}*\n>_{username}_ ({date})\n>{text}'.format(title=topic['title'],
+                                                                                   username=username, date=message_date,
+                                                                                   text=text)
                     slack.chat.post_message(channel=CHANNEL, text=message, username=USERNAME, icon_url=ICON_URL)
                     logging.info('Posted comment_id=%s\n%s', id, message)
+
 
 if __name__ == '__main__':
     vts = Vts()
