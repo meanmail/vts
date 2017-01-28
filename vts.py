@@ -1,10 +1,9 @@
-from slacker import Slacker
-
-import vk_api
-
+import logging
 import time
 
-import logging
+import daemon
+import vk_api
+from slacker import Slacker
 
 from settings import SLACK_TOKEN, VK_LOGIN, VK_PASSWORD, GROUP_ID, TOPIC_ID, ICON_URL, CHANNEL, USERNAME
 
@@ -12,12 +11,12 @@ slack = Slacker(SLACK_TOKEN)
 
 
 class Vts:
-    def __init__(self):
-        self.last_comment_id = 0
-        self.vk = None
+    last_comment_id = 0
+    vk = None
 
-    def update_vk(self):
-        if self.vk is not None:
+    @staticmethod
+    def update_vk():
+        if Vts.vk is not None:
             return
 
         vk_session = vk_api.VkApi(VK_LOGIN, VK_PASSWORD)
@@ -31,47 +30,50 @@ class Vts:
             logging.error(captcha)
             return
 
-        self.vk = vk_session.get_api()
+        Vts.vk = vk_session.get_api()
 
-    def update_last_comment_id(self):
-        self.update_vk()
+    @staticmethod
+    def update_last_comment_id():
+        Vts.update_vk()
 
-        if self.vk is None:
+        if Vts.vk is None:
             return
 
         try:
-            response = self.vk.board.getComments(group_id=GROUP_ID, topic_id=TOPIC_ID, sort='desc', count=1)
+            response = Vts.vk.board.getComments(group_id=GROUP_ID, topic_id=TOPIC_ID, sort='desc', count=1)
         except vk_api.ApiError:
             return
 
         if response['count'] == 0:
             return
 
-        self.last_comment_id = response['items'][0]['id']
-        print('Set initial id to ' + str(self.last_comment_id))
+        Vts.last_comment_id = response['items'][0]['id']
+        print('Set initial id to ' + str(Vts.last_comment_id))
 
-    def get_comments(self):
-        self.update_vk()
+    @staticmethod
+    def get_comments():
+        Vts.update_vk()
 
-        if self.vk is None:
+        if Vts.vk is None:
             return [], []
 
         try:
-            response = self.vk.board.getComments(group_id=GROUP_ID, topic_id=TOPIC_ID,
-                                                 start_comment_id=self.last_comment_id, extended=1)
+            response = Vts.vk.board.getComments(group_id=GROUP_ID, topic_id=TOPIC_ID,
+                                                start_comment_id=Vts.last_comment_id, extended=1)
         except vk_api.ApiError:
             return [], []
 
         return response['items'], response['profiles']
 
-    def get_topic(self):
-        self.update_vk()
+    @staticmethod
+    def get_topic():
+        Vts.update_vk()
 
-        if self.vk is None:
+        if Vts.vk is None:
             return None
 
         try:
-            response = self.vk.board.getTopics(group_id=GROUP_ID, topic_ids=[TOPIC_ID])
+            response = Vts.vk.board.getTopics(group_id=GROUP_ID, topic_ids=[TOPIC_ID])
         except vk_api.ApiError:
             return None
 
@@ -80,22 +82,23 @@ class Vts:
 
         return response['items'][0]
 
-    def run(self):
+    @staticmethod
+    def run():
         while True:
-            if self.last_comment_id == 0:
-                self.update_last_comment_id()
+            if Vts.last_comment_id == 0:
+                Vts.update_last_comment_id()
 
-            if self.last_comment_id == 0:
+            if Vts.last_comment_id == 0:
                 time.sleep(60)
                 return
 
-            topic = self.get_topic()
+            topic = Vts.get_topic()
             if topic is None:
                 logging.warning('Topic not found')
                 time.sleep(60)
                 continue
 
-            comments, profiles = self.get_comments()
+            comments, profiles = Vts.get_comments()
 
             if len(comments) == 0:
                 time.sleep(5)
@@ -108,8 +111,8 @@ class Vts:
 
             for comment in comments:
                 id = comment['id']
-                if id > self.last_comment_id:
-                    self.last_comment_id = id
+                if id > Vts.last_comment_id:
+                    Vts.last_comment_id = id
 
                     try:
                         user = users[abs(comment['from_id'])]
@@ -126,13 +129,5 @@ class Vts:
                     logging.info('Posted comment_id=%s\n%s', id, message)
 
 
-if __name__ == '__main__':
-    vts = Vts()
-    try:
-        while True:
-            try:
-                vts.run()
-            except vk_api.requests.exceptions.ConnectionError:
-                time.sleep(10)
-    except KeyboardInterrupt:
-        pass
+with daemon.DaemonContext():
+    Vts.run()

@@ -2,8 +2,8 @@
 
 ### BEGIN INIT INFO
 # Provides:          vts
-# Required-Start:    $remote_fs $syslog
-# Required-Stop:     $remote_fs $syslog
+# Required-Start:    $network $local_fs $syslog
+# Required-Stop:     $local_fs $syslog
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
 # Short-Description: VK to Slack
